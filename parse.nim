@@ -19,7 +19,11 @@ type
   lineCursor = ref object
     value: int
     line: string
+method empty(self: lineCursor): bool {.base.} = 
+    return self.value >= self.line.len
 method current(self: lineCursor): char {.base.} = 
+    if self.value >= self.line.len:
+        return 'e'
     return self.line[self.value]
 method currentToInt(self: lineCursor): int {.base.} = 
     return int(self.line[self.value])
@@ -85,6 +89,8 @@ proc parseTree(c: lineCursor): Node=
             keyNode.child.add(parseTree(c))
             rootNode.child.add(keyNode)
 
+        c.advance()
+
         return rootNode
 
     # trying to read string
@@ -105,11 +111,12 @@ proc parseTree(c: lineCursor): Node=
             var elementNode: Node = parseTree(c)
             rootNode.child.add(elementNode)
 
+        c.advance()
+
         return rootNode
 
     else:
         raise newException(IOError, "IO failed")
-        # raise (ref IOError)("dddupa")
 
 
 proc printTree(node: Node, indent: int)=
@@ -127,6 +134,7 @@ proc printTree(node: Node, indent: int)=
 
     elif node.node_type == nodeType.listNodeType:
         stdout.write "[\n"
+
         for child in node.child:
             printTree(child, indent+1)
             stdout.write "\n"
@@ -171,7 +179,7 @@ proc parseFilename(): string =
 
     return filename
 
-proc run()=
+proc run() =
     var content = open(parseFilename())
     defer: content.close()
 
@@ -185,4 +193,3 @@ proc run()=
     echo ""
 
 run()
-
