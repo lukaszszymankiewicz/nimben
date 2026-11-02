@@ -1,4 +1,12 @@
+import sequtils
 import std/parseopt
+
+proc seqToString(str: seq[byte]): string =
+  result = newStringOfCap(len(str))
+  for ch in str:
+    add(result, chr(ch))
+
+  return result
 
 type
   nodeType = enum
@@ -12,39 +20,38 @@ type
   Node = ref object of RootObj
     node_type: nodeType
     child: seq[Node]
-    strValue: string
+    strValue: seq[byte]
     intValue: int
 
 type
-  lineCursor = ref object
-    value: int
-    line: string
-method empty(self: lineCursor): bool {.base.} = 
-    return self.value >= self.line.len
-method current(self: lineCursor): char {.base.} = 
-    if self.value >= self.line.len:
+  byteCursor = ref object
+    cur_idx: int
+    raw_bytes: seq[byte]
+method empty(self: byteCursor): bool {.base.} = 
+    return self.cur_idx >= self.raw_bytes.len
+method current(self: byteCursor): char {.base.} = 
+    if self.empty():
         return 'e'
-    return self.line[self.value]
-method currentToInt(self: lineCursor): int {.base.} = 
-    return int(self.line[self.value])
-method advance(self: lineCursor) {.base.} = 
-    self.value += 1
-method moveTo(self: lineCursor, val: int) {.base.} = 
-    self.value = val
-method pointingAtDictIdentifier(self: lineCursor): bool {.base.} = 
-    return self.current == 'd'
-method pointingAtNumber(self: lineCursor): bool {.base.} = 
-    var curInt = self.currentToInt()
-    return curInt >= 48 and curInt <= 58
-method pointingAtListIdentifier(self: lineCursor): bool {.base.} = 
+    return chr(self.raw_bytes[self.cur_idx])
+method currentToInt(self: byteCursor): int {.base.} = 
+    return int(self.current())
+method advance(self: byteCursor) {.base.} = 
+    self.cur_idx += 1
+method moveTo(self: byteCursor, val: int) {.base.} = 
+    self.cur_idx = val
+method pointingAtDictIdentifier(self: byteCursor): bool {.base.} = 
+    return self.current() == 'd'
+method pointingAtNumber(self: byteCursor): bool {.base.} = 
+    return self.currentToInt() >= 48 and self.currentToInt() <= 58
+method pointingAtListIdentifier(self: byteCursor): bool {.base.} = 
     return self.current() == 'l'
-method pointingAtNumberIdentifier(self: lineCursor): bool {.base.} = 
+method pointingAtNumberIdentifier(self: byteCursor): bool {.base.} = 
     return self.current() == 'i'
-method pointingAtColon(self: lineCursor): bool {.base.} = 
-    return self.current == ':'
-method pointingAtIterableEnd(self: lineCursor): bool {.base.} = 
-    return self.current == 'e'
-method readLength(self: lineCursor): int {.base.}= 
+method pointingAtColon(self: byteCursor): bool {.base.} = 
+    return self.current() == ':'
+method pointingAtIterableEnd(self: byteCursor): bool {.base.} = 
+    return self.current() == 'e'
+method readLength(self: byteCursor): int {.base.}= 
     # it must start from a number!
     # the number is parsed and returned, cursor is set after colon
 
@@ -62,21 +69,21 @@ method readLength(self: lineCursor): int {.base.}=
 
     return lenRead
 
-method readStringSlice(self: lineCursor): string {.base.} = 
+method readStringSlice(self: byteCursor): seq[byte] {.base.} = 
     # it must start from a number!
     # the number is parsed and only then the actual string is read
 
     var length: int = self.readLength()
-    var strBegin: int = self.value
+    var strBegin: int = self.cur_idx
     var strEnd: int = strBegin+length-1
     
     # set the cursor to be after the string red
     self.moveTo(strEnd + 1)
 
-    return self.line[strBegin..strEnd]
+    return self.raw_bytes[strBegin..strEnd]
 
 
-proc parseTree(c: lineCursor): Node=
+proc parseTree(c: byteCursor): Node=
 
     # trying to read dict
     if c.pointingAtDictIdentifier():
@@ -145,14 +152,14 @@ proc printTree(node: Node, indent: int)=
         stdout.write "]"
 
     elif node.node_type == nodeType.stringNodeType and node.child.len == 0:
-        stdout.write node.strValue
+        stdout.write seqToString(node.strValue)
         stdout.write ", "
 
     elif node.node_type == nodeType.stringNodeType:
         for i in 0..indent-1:
             stdout.write "   "
 
-        stdout.write node.strValue
+        stdout.write seqToString(node.strValue)
 
         for child in node.child:
             stdout.write ": "
@@ -180,14 +187,19 @@ proc parseFilename(): string =
     return filename
 
 proc run() =
-    var content = open(parseFilename())
-    defer: content.close()
+    var f: File 
+    var raw: seq[byte]
 
-    # TODO: multiline supprt
+    if open(f, parseFilename(), fmRead):
+        defer: f.close()
+        raw = newSeq[byte](f.getFileSize())
+        discard f.readBytes(raw, 0, raw.len)
+    else:
+        echo "failed"
+        return
 
-    var cursor: lineCursor = lineCursor(line: content.readLine())
-
-    var tree: Node = parseTree(cursor)
+    var bc: byteCursor = byteCursor(raw_bytes: raw)
+    var tree: Node = parseTree(bc)
 
     printTree(tree, 0)
     echo ""
