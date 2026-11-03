@@ -4,7 +4,8 @@ import std/parseopt
 proc seqToString(str: seq[byte]): string =
   result = newStringOfCap(len(str))
   for ch in str:
-    add(result, chr(ch))
+    if ch != ord('\n'):
+        add(result, chr(ch))
 
   return result
 
@@ -15,7 +16,6 @@ type
     stringNodeType,
     integerNodeType,
     listNodeType,
-    unknownNodeType,
 
 type
   Node = ref object of RootObj
@@ -153,6 +153,9 @@ proc printTree(node: Node)=
         stdout.write "{"
 
         for child in node.child:
+            if child.node_type == nodeType.stringNodeType or child.node_type == nodeType.stringNodeType:
+                stdout.write "\n"
+            child.makeIndent()
             printTree(child)
 
         stdout.write "\n"
@@ -165,31 +168,21 @@ proc printTree(node: Node)=
         stdout.write "["
 
         for child in node.child:
+            if child.node_type == nodeType.stringNodeType or child.node_type == nodeType.stringNodeType:
+                stdout.write "\n"
+            child.makeIndent()
             printTree(child)
 
         stdout.write "\n"
         node.makeIndent()
         stdout.write "]"
 
-    elif node.node_type == nodeType.stringNodeType and node.child.len == 0:
-
-        stdout.write "\n"
-        node.makeIndent()
-        stdout.write seqToString(node.byteVals)
-        stdout.write ", "
-
-    elif node.node_type == nodeType.stringNodeType:
-        stdout.write "\n"
-        node.makeIndent()
+    else:
         stdout.write seqToString(node.byteVals)
 
         for child in node.child:
             stdout.write ": "
             printTree(child)
-
-    elif node.node_type == nodeType.integerNodeType:
-        stdout.write seqToString(node.byteVals)
-        stdout.write ", "
 
 proc parseFilename(): string = 
 
