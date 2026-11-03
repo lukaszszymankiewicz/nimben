@@ -8,6 +8,7 @@ proc seqToString(str: seq[byte]): string =
 
   return result
 
+
 type
   nodeType = enum
     dictNodeType,
@@ -20,8 +21,11 @@ type
   Node = ref object of RootObj
     node_type: nodeType
     child: seq[Node]
-    strValue: seq[byte]
-    intValue: int
+    byteVals: seq[byte]
+    depth: int
+method makeIndent(self: Node, add: int=0)  =
+    for i in 0..self.depth-1+add:
+        stdout.write "   "
 
 type
   byteCursor = ref object
@@ -29,28 +33,28 @@ type
     raw_bytes: seq[byte]
 method empty(self: byteCursor): bool {.base.} = 
     return self.cur_idx >= self.raw_bytes.len
-method current(self: byteCursor): char {.base.} = 
+method current(self: byteCursor): byte {.base.} = 
     if self.empty():
-        return 'e'
-    return chr(self.raw_bytes[self.cur_idx])
+        return ord('e')
+    return self.raw_bytes[self.cur_idx]
 method currentToInt(self: byteCursor): int {.base.} = 
     return int(self.current())
 method advance(self: byteCursor) {.base.} = 
     self.cur_idx += 1
 method moveTo(self: byteCursor, val: int) {.base.} = 
     self.cur_idx = val
-method pointingAtDictIdentifier(self: byteCursor): bool {.base.} = 
-    return self.current() == 'd'
 method pointingAtNumber(self: byteCursor): bool {.base.} = 
     return self.currentToInt() >= 48 and self.currentToInt() <= 58
+method pointingAtDictIdentifier(self: byteCursor): bool {.base.} = 
+    return self.current() == ord('d')
 method pointingAtListIdentifier(self: byteCursor): bool {.base.} = 
-    return self.current() == 'l'
+    return self.current() == ord('l')
 method pointingAtNumberIdentifier(self: byteCursor): bool {.base.} = 
-    return self.current() == 'i'
+    return self.current() == ord('i')
 method pointingAtColon(self: byteCursor): bool {.base.} = 
-    return self.current() == ':'
+    return self.current() == ord(':')
 method pointingAtIterableEnd(self: byteCursor): bool {.base.} = 
-    return self.current() == 'e'
+    return self.current() == ord('e')
 method readLength(self: byteCursor): int {.base.}= 
     # it must start from a number!
     # the number is parsed and returned, cursor is set after colon
@@ -69,6 +73,7 @@ method readLength(self: byteCursor): int {.base.}=
 
     return lenRead
 
+# this method should move cursor by one to omit 'jumping'
 method readStringSlice(self: byteCursor): seq[byte] {.base.} = 
     # it must start from a number!
     # the number is parsed and only then the actual string is read
@@ -82,40 +87,54 @@ method readStringSlice(self: byteCursor): seq[byte] {.base.} =
 
     return self.raw_bytes[strBegin..strEnd]
 
+method readDigit(self: byteCursor): seq[byte] {.base.} = 
+    # it must start from a number!
+    # the number is parsed and returned, cursor is set after the end
+    var digit: seq[byte]
 
-proc parseTree(c: byteCursor): Node=
+    while not self.pointingAtIterableEnd():
+        digit.add(self.current())
+        self.advance()
+
+    # move end
+    self.advance()
+
+    return digit
+
+
+proc parseTree(c: byteCursor, depth: int = 0): Node=
 
     # trying to read dict
     if c.pointingAtDictIdentifier():
-        var rootNode = Node(node_type: nodeType.dictNodeType)
+        var rootNode = Node(node_type: nodeType.dictNodeType, depth: depth)
 
         c.advance()
 
         while not c.pointingAtIterableEnd:
-            var keyNode = Node(node_type: nodeType.stringNodeType, strValue: c.readStringSlice())
-            keyNode.child.add(parseTree(c))
+            var keyNode = Node(node_type: nodeType.stringNodeType, byteVals: c.readStringSlice(), depth:depth+1)
+            keyNode.child.add(parseTree(c, depth+1))
             rootNode.child.add(keyNode)
 
         c.advance()
 
         return rootNode
 
-    # trying to read string
+    # trying to read number
     elif c.pointingAtNumberIdentifier():
         c.advance()
-        return Node(node_type: nodeType.integerNodeType, intValue: c.readLength())
+        return Node(node_type: nodeType.integerNodeType, byteVals: c.readDigit(), depth:depth)
 
     # trying to read string
     elif c.pointingAtNumber():
-        return Node(node_type: nodeType.stringNodeType, strValue: c.readStringSlice())
+        return Node(node_type: nodeType.stringNodeType, byteVals: c.readStringSlice(), depth: depth)
 
     elif c.pointingAtListIdentifier():
-        var rootNode = Node(node_type: nodeType.listNodeType)
+        var rootNode = Node(node_type: nodeType.listNodeType, depth: depth)
 
         c.advance()
 
         while not c.pointingAtIterableEnd:
-            var elementNode: Node = parseTree(c)
+            var elementNode: Node = parseTree(c, depth+1)
             rootNode.child.add(elementNode)
 
         c.advance()
@@ -126,50 +145,50 @@ proc parseTree(c: byteCursor): Node=
         raise newException(IOError, "IO failed")
 
 
-proc printTree(node: Node, indent: int)=
+proc printTree(node: Node)=
 
     if node.node_type == nodeType.dictNodeType:
-        stdout.write "{\n"
+        stdout.write "\n"
+        node.makeIndent()
+        stdout.write "{"
+
         for child in node.child:
-            printTree(child, indent+1)
-            stdout.write "\n"
+            printTree(child)
 
-        for i in 0..indent-1:
-            stdout.write "   "
-
+        stdout.write "\n"
+        node.makeIndent()
         stdout.write "}"
 
     elif node.node_type == nodeType.listNodeType:
-        stdout.write "[\n"
+        stdout.write "\n"
+        node.makeIndent()
+        stdout.write "["
 
         for child in node.child:
-            printTree(child, indent+1)
-            stdout.write "\n"
+            printTree(child)
 
-        for i in 0..indent-1:
-            stdout.write "   "
-
+        stdout.write "\n"
+        node.makeIndent()
         stdout.write "]"
 
     elif node.node_type == nodeType.stringNodeType and node.child.len == 0:
-        stdout.write seqToString(node.strValue)
+
+        stdout.write "\n"
+        node.makeIndent()
+        stdout.write seqToString(node.byteVals)
         stdout.write ", "
 
     elif node.node_type == nodeType.stringNodeType:
-        for i in 0..indent-1:
-            stdout.write "   "
-
-        stdout.write seqToString(node.strValue)
+        stdout.write "\n"
+        node.makeIndent()
+        stdout.write seqToString(node.byteVals)
 
         for child in node.child:
             stdout.write ": "
-            printTree(child, indent)
+            printTree(child)
 
     elif node.node_type == nodeType.integerNodeType:
-        for i in 0..indent-1:
-            stdout.write "   "
-
-        stdout.write node.intValue
+        stdout.write seqToString(node.byteVals)
         stdout.write ", "
 
 proc parseFilename(): string = 
@@ -201,7 +220,7 @@ proc run() =
     var bc: byteCursor = byteCursor(raw_bytes: raw)
     var tree: Node = parseTree(bc)
 
-    printTree(tree, 0)
+    printTree(tree)
     echo ""
 
 run()
