@@ -1,5 +1,7 @@
-import sequtils
+import strutils
 import std/parseopt
+import sha
+
 
 proc seqToString(str: seq[byte]): string =
   result = newStringOfCap(len(str))
@@ -9,6 +11,13 @@ proc seqToString(str: seq[byte]): string =
 
   return result
 
+proc numToByteSeq(num: int): seq[byte] =
+  var res: seq[byte]
+
+  for char in intToStr(num):
+    res.add(cast[byte](ord(char)))
+
+  return res
 
 type
   nodeType = enum
@@ -23,7 +32,7 @@ type
     child: seq[Node]
     byteVals: seq[byte]
     depth: int
-method makeIndent(self: Node, add: int=0)  =
+method makeIndent(self: Node, add: int=0) {.base.}  =
     for i in 0..self.depth-1+add:
         stdout.write "   "
 
@@ -144,8 +153,59 @@ proc parseTree(c: byteCursor, depth: int = 0): Node=
     else:
         raise newException(IOError, "IO failed")
 
+proc printNodeBinaryDump(node: Node, res: ptr seq[byte]) =
+    if node.node_type == nodeType.dictNodeType:
+        res[].add(ord('d'))
+        for child in node.child:
+            printNodeBinaryDump(child, res)
+        res[].add(ord('e'))
+    elif node.node_type == nodeType.listNodeType:
+        res[].add(ord('l'))
+        for child in node.child:
+            printNodeBinaryDump(child, res)
+        res[].add(ord('e'))
+    elif node.node_type == nodeType.stringNodeType:
+        res[].add(numToByteSeq(node.byteVals.len))
+        res[].add(ord(':'))
+        res[].add(node.byteVals)
+        for child in node.child:
+            printNodeBinaryDump(child, res)
+    else:
+        res[].add(ord('i'))
+        res[].add(node.byteVals)
+        res[].add(ord('e'))
+        for child in node.child:
+            printNodeBinaryDump(child, res)
 
-proc printTree(node: Node)=
+proc printNodeForHumans(node: Node) = 
+    if node.node_type == nodeType.dictNodeType:
+        stdout.write 'd'
+        for child in node.child:
+            printNodeForHumans(child)
+        stdout.write 'e'
+    elif node.node_type == nodeType.listNodeType:
+        stdout.write 'l'
+        for child in node.child:
+            printNodeForHumans(child)
+        stdout.write 'e'
+    elif node.node_type == nodeType.stringNodeType:
+        for b in numToByteSeq(node.byteVals.len):
+            stdout.write chr(b)
+        stdout.write ':'
+        for b in node.byteVals:
+            stdout.write chr(b)
+        for child in node.child:
+            printNodeForHumans(child)
+    else:
+        stdout.write 'i'
+        for b in node.byteVals:
+            stdout.write chr(b)
+        stdout.write 'e'
+        for child in node.child:
+            printNodeForHumans(child)
+
+
+proc printNodeTreeForHumans(node: Node)=
 
     if node.node_type == nodeType.dictNodeType:
         stdout.write "\n"
@@ -156,7 +216,7 @@ proc printTree(node: Node)=
             if child.node_type == nodeType.stringNodeType or child.node_type == nodeType.stringNodeType:
                 stdout.write "\n"
             child.makeIndent()
-            printTree(child)
+            printNodeTreeForHumans(child)
 
         stdout.write "\n"
         node.makeIndent()
@@ -171,7 +231,7 @@ proc printTree(node: Node)=
             if child.node_type == nodeType.stringNodeType or child.node_type == nodeType.stringNodeType:
                 stdout.write "\n"
             child.makeIndent()
-            printTree(child)
+            printNodeTreeForHumans(child)
 
         stdout.write "\n"
         node.makeIndent()
@@ -182,8 +242,21 @@ proc printTree(node: Node)=
 
         for child in node.child:
             stdout.write ": "
-            printTree(child)
+            printNodeTreeForHumans(child)
 
+proc findInfoNode(tree: Node): Node =
+    if seqToString(tree.byte_vals) == "info":
+        assert tree.child.len == 1 
+        return tree.child[0]
+
+    for child in tree.child:
+        let n: Node = findInfoNode(child)
+        if n != nil:
+            return n
+
+    return nil
+
+# TODO: this to sume utils (?)
 proc parseFilename(): string = 
 
     var filename: string = ""
@@ -198,7 +271,13 @@ proc parseFilename(): string =
 
     return filename
 
-proc run() =
+proc getBinaryDump(tree: Node): seq[byte] =
+    var res: seq[byte]
+    printNodeBinaryDump(tree, res.addr)
+
+    return res
+
+proc createNodeTreeFromTorrentFile() =
     var f: File 
     var raw: seq[byte]
 
@@ -212,8 +291,11 @@ proc run() =
 
     var bc: byteCursor = byteCursor(raw_bytes: raw)
     var tree: Node = parseTree(bc)
+    var infoNode: Node = findInfoNode(tree)
+    # printNodeTreeForHumans(infoNode)
+    var res: seq[byte] = getBinaryDump(infoNode)
 
-    printTree(tree)
-    echo ""
+    var sha: string = sha.generateSHA1Hash(res)
+    echo sha
 
-run()
+createNodeTreeFromTorrentFile()
