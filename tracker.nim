@@ -12,7 +12,6 @@ This 20-byte info_hash is the unique fingerprint
 
 you use to identify the torrent to trackers and peers.
 
-https://medium.com/@sushil23harsana/building-a-bittorrent-client-from-scratch-understanding-it-properly-fedda56a8576
 
 set the GET request to the tracker, 
 

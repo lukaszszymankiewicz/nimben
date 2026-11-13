@@ -1,3 +1,4 @@
+# this works, `curl` command that should have an equivalent in `http_server.nim`
 curl -G \
     --url-query "+info_hash=%CB%40%AC%7B%29%8F%00%0B%2C%6A%E0%8E%BC%31%9D%88%A0%FC%91%E9" \
     --url-query "peer_id=-nT2137-123456789012" \
