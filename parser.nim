@@ -1,6 +1,6 @@
 import strutils
-import std/parseopt
 import sha
+import util
 
 
 proc seqToString(str: seq[byte]): string =
@@ -27,7 +27,7 @@ type
     listNodeType,
 
 type
-  Node = ref object of RootObj
+  Node* = ref object of RootObj
     node_type: nodeType
     child: seq[Node]
     byteVals: seq[byte]
@@ -177,7 +177,7 @@ proc printNodeBinaryDump(node: Node, res: ptr seq[byte]) =
         for child in node.child:
             printNodeBinaryDump(child, res)
 
-proc printNodeForHumans(node: Node) = 
+proc printNodeForHumans*(node: Node) = 
     if node.node_type == nodeType.dictNodeType:
         stdout.write 'd'
         for child in node.child:
@@ -205,7 +205,7 @@ proc printNodeForHumans(node: Node) =
             printNodeForHumans(child)
 
 
-proc printNodeTreeForHumans(node: Node)=
+proc printNodeTreeForHumans*(node: Node)=
 
     if node.node_type == nodeType.dictNodeType:
         stdout.write "\n"
@@ -256,46 +256,22 @@ proc findInfoNode(tree: Node): Node =
 
     return nil
 
-# TODO: this to sume utils (?)
-proc parseFilename(): string = 
-
-    var filename: string = ""
-
-    for kind, key, val in getopt():
-        case kind
-        of cmdEnd: break
-        of cmdShortOption, cmdLongOption:
-            discard
-        of cmdArgument:
-            filename = key
-
-    return filename
-
-proc getBinaryDump(tree: Node): seq[byte] =
-    var res: seq[byte]
-    printNodeBinaryDump(tree, res.addr)
-
-    return res
-
-proc createNodeTreeFromTorrentFile() =
-    var f: File 
-    var raw: seq[byte]
-
-    if open(f, parseFilename(), fmRead):
-        defer: f.close()
-        raw = newSeq[byte](f.getFileSize())
-        discard f.readBytes(raw, 0, raw.len)
-    else:
-        echo "failed"
-        return
-
-    var bc: byteCursor = byteCursor(raw_bytes: raw)
+proc createNodeTreeFromTorrentFile*(raw_bytes: seq[byte]): Node =
+    var bc: byteCursor = byteCursor(raw_bytes: raw_bytes)
     var tree: Node = parseTree(bc)
-    var infoNode: Node = findInfoNode(tree)
-    # printNodeTreeForHumans(infoNode)
-    var res: seq[byte] = getBinaryDump(infoNode)
 
-    var sha: string = sha.generateSHA1Hash(res)
+    return tree
+
+proc getInfoNodeSHAHash*(tree: Node): string =
+    var res: seq[byte]
+
+    printNodeBinaryDump(findInfoNode(tree), res.addr)
+
+    return sha.generateSHA1Hash(res)
+
+proc getInfoHash() =
+    var raw: seq[byte] = util.readBinaryDataFromFile()
+    var tree: Node = createNodeTreeFromTorrentFile(raw)
+    
+    var sha: string = getInfoNodeSHAHash(tree)
     echo sha
-
-createNodeTreeFromTorrentFile()
