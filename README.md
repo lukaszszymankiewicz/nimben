@@ -11,3 +11,5 @@ links used:
 - https://en.wikipedia.org/wiki/SHA-1
 - https://paymentcardtools.com/hashes/sha1
 
+debug torrent files with command:
+`nim c -o:bin/debug -r debug.nim ex.torrent`
